@@ -2,69 +2,108 @@ import hre from "hardhat";
 import { expect } from "chai";
 import { MyToken } from "../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { DECIMALS, MINTING_AMOUNT } from "./constant";
 
-const DECIMALS = 18;
-const mt = (v: string) => hre.ethers.parseUnits(v, DECIMALS);
-
-describe("MyToken", () => {
+describe("mytoken deploy", () => {
   let myTokenC: MyToken;
   let signers: HardhatEthersSigner[];
-
-  before("deploy", async () => {
+  before("should deploy", async () => {
     signers = await hre.ethers.getSigners();
-    myTokenC = await hre.ethers.deployContract("MyToken", ["MyToken", "MT", DECIMALS]);
+    myTokenC = await hre.ethers.deployContract("MyToken", [
+      "MyToken",
+      "MT",
+      DECIMALS,
+      MINTING_AMOUNT,
+    ]);
+  });
+  it("should return name", async () => {
+    expect(await myTokenC.name()).equal("MyToken");
+  });
+  it("should return symbol", async () => {
+    expect(await myTokenC.symbol()).equal("MT");
+  });
+  it("should return decimals", async () => {
+    expect(await myTokenC.decimals()).equal(DECIMALS);
+  });
+    it("should return 0 totalSupply", async () => {
+    expect(await myTokenC.totalSupply()).equal(MINTING_AMOUNT * 10n ** DECIMALS);
+  });
+  it("shoud have 0.5MT", async () => {
+    const signer1 = signers[1];
+    await myTokenC.transfer(hre.ethers.parseUnits("0.5", DECIMALS), signer1.address);
+    expect(await myTokenC.balanceOf(signer1.address)).equal(
+      hre.ethers.parseUnits("0.5", DECIMALS)
+    );
   });
 
-  describe("Basic state", () => {
-    it("should return name, symbol, decimals", async () => {
-      expect(await myTokenC.name()).equal("MyToken");
-      expect(await myTokenC.symbol()).equal("MT");
-      expect(await myTokenC.decimals()).equal(DECIMALS);
+  describe("Mint", () => {
+    before("should deploy", async () => {
+      myTokenC = await hre.ethers.deployContract("MyToken", [
+        "MyToken",
+        "MT",
+        DECIMALS,
+        MINTING_AMOUNT,
+      ]);
     });
-    it("should mint 1MT to signer0", async () => {
-      expect(await myTokenC.totalSupply()).equal(mt("1"));
-      expect(await myTokenC.balanceOf(signers[0].address)).equal(mt("1"));
-    });
-  });
-
-  describe("approve & transferFrom", () => {
-    before("redeploy", async () => {
-      myTokenC = await hre.ethers.deployContract("MyToken", ["MyToken", "MT", DECIMALS]);
-    });
-
-    // 1. approve: signer1에게 signer0의 자산 이동 권한 부여
-    it("signer0 approves signer1 to spend 10MT", async () => {
-      const [signer0, signer1] = signers;
-      await expect(myTokenC.connect(signer0).approve(signer1.address, mt("10")))
-        .to.emit(myTokenC, "Approval")
-        .withArgs(signer1.address, mt("10"));
-      expect(await myTokenC.allowance(signer0.address, signer1.address)).equal(mt("10"));
+    it("should return 1MT balance for signer 0", async () => {
+      const signer0 = signers[0];
+      expect(await myTokenC.balanceOf(signer0)).equal(
+        MINTING_AMOUNT * 10n ** DECIMALS
+      );
     });
 
-    // 2. transferFrom: signer1이 signer0의 MT를 자기 주소(signer1)로 전송
-    it("signer1 transfers 0.3MT from signer0 to signer1", async () => {
-      const [signer0, signer1] = signers;
+    it("should return or revert when minting infinitely", async () => {
+      const hacker = signers[2];
+      const mintingAgainAmount = hre.ethers.parseUnits("10000", DECIMALS);
       await expect(
-        myTokenC.connect(signer1).transferFrom(signer0.address, signer1.address, mt("0.3"))
+        myTokenC.connect(hacker).mint(mintingAgainAmount, hacker.address)
+      ).to.be.revertedWith("You are not authorized to manage this contract");
+    });
+  });
+
+  describe("TransferFrom", () => {
+    before("should deploy", async () => {
+      myTokenC = await hre.ethers.deployContract("MyToken", [
+        "MyToken",
+        "MT",
+        DECIMALS,
+        MINTING_AMOUNT,
+      ]);
+    });
+    it("should emit Approval event", async () => {
+      const signer1 = signers[1];
+      await expect(
+        myTokenC.approve(signer1.address, hre.ethers.parseUnits("10", DECIMALS))
+      )
+        .to.emit(myTokenC, "Approval")
+        .withArgs(signer1.address, hre.ethers.parseUnits("10", DECIMALS));
+    });
+    it("should transfer 0.3MT from signer0 to signer1 by signer1", async () => {
+      const signer0 = signers[0];
+      const signer1 = signers[1];
+      await expect(
+        myTokenC
+          .connect(signer1)
+          .transferFrom(
+            signer0.address,
+            signer1.address,
+            hre.ethers.parseUnits("0.3", DECIMALS)
+          )
       )
         .to.emit(myTokenC, "Transfer")
-        .withArgs(signer0.address, signer1.address, mt("0.3"));
+        .withArgs(
+          signer0.address,
+          signer1.address,
+          hre.ethers.parseUnits("0.3", DECIMALS)
+        );
     });
-
-    // 3. balance 확인
-    it("signer0 has 0.7MT, signer1 has 0.3MT", async () => {
-      const [signer0, signer1] = signers;
-      expect(await myTokenC.balanceOf(signer0.address)).equal(mt("0.7"));
-      expect(await myTokenC.balanceOf(signer1.address)).equal(mt("0.3"));
-      // 남은 allowance: 10 - 0.3 = 9.7MT
-      expect(await myTokenC.allowance(signer0.address, signer1.address)).equal(mt("9.7"));
-    });
-
-    it("should revert when signer2 (no allowance) calls transferFrom", async () => {
-      const [signer0, , signer2] = signers;
-      await expect(
-        myTokenC.connect(signer2).transferFrom(signer0.address, signer2.address, mt("0.1"))
-      ).to.be.revertedWith("insufficient allowance");
+    it("should move 0.3MT from signer0 to signer1", async () => {
+      expect(await myTokenC.balanceOf(signers[0].address)).equal(
+        MINTING_AMOUNT * 10n ** DECIMALS - hre.ethers.parseUnits("0.3", DECIMALS)
+      );
+      expect(await myTokenC.balanceOf(signers[1].address)).equal(
+        hre.ethers.parseUnits("0.3", DECIMALS)
+      );
     });
   });
 });
