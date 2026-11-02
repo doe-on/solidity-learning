@@ -47,6 +47,12 @@ describe("TinyBank", () => {
         await tinyBankC.totalStaked()
       );
     });
+
+    it("should revert when staking 0 amount", async () => {
+      await expect(tinyBankC.stake(0)).to.be.revertedWith(
+        "cannot stake 0 amount"
+      );
+    });
   });
 
   describe("Withdraw", () => {
@@ -109,6 +115,13 @@ describe("TinyBank", () => {
       await expect(tinyBankC.connect(hacker).confirm()).to.be.revertedWith(
         "You are not a manager"
       );
+    });
+
+    it("should revert when no manager confirmed", async () => {
+      const rewardToChange = hre.ethers.parseUnits("2", DECIMALS);
+      await expect(
+        tinyBankC.connect(managers[0]).setRewardPerBlock(rewardToChange)
+      ).to.be.revertedWith("Not all confirmed yet");
     });
 
     it("should revert when not all managers confirmed", async () => {

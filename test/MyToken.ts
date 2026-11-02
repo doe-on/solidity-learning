@@ -25,10 +25,10 @@ describe("mytoken deploy", () => {
   it("should return decimals", async () => {
     expect(await myTokenC.decimals()).equal(DECIMALS);
   });
-    it("should return 0 totalSupply", async () => {
+  it("should return 100MT totalSupply", async () => {
     expect(await myTokenC.totalSupply()).equal(MINTING_AMOUNT * 10n ** DECIMALS);
   });
-  it("shoud have 0.5MT", async () => {
+  it("signer1 should have 0.5MT after transfer", async () => {
     const signer1 = signers[1];
     await myTokenC.transfer(hre.ethers.parseUnits("0.5", DECIMALS), signer1.address);
     expect(await myTokenC.balanceOf(signer1.address)).equal(
@@ -45,7 +45,7 @@ describe("mytoken deploy", () => {
         MINTING_AMOUNT,
       ]);
     });
-    it("should return 1MT balance for signer 0", async () => {
+    it("should return 100MT balance for signer0", async () => {
       const signer0 = signers[0];
       expect(await myTokenC.balanceOf(signer0)).equal(
         MINTING_AMOUNT * 10n ** DECIMALS
